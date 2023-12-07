@@ -1,7 +1,7 @@
 #include <cassert>
+#include <iostream>
 #include <filesystem>
 #include <fstream>
-#include <iostream>
 #include <regex>
 #include <sstream>
 #include <string>
@@ -14,8 +14,84 @@ path operator""_p(const char* data, std::size_t sz) {
     return path(data, data + sz);
 }
 
+bool Preprocess(ifstream& input_file, ofstream& output_file, const path& in_file_path, const vector<path>& include_directories){
+    static regex include_quotes(R"/(\s*#\s*include\s*"([^"]*)"\s*)/");
+    static regex include_brackets(R"/(\s*#\s*include\s*<([^>]*)>\s*)/");
+    
+    int line = 0;
+    string str;
+    while (getline(input_file, str)){
+        ++line;
+        if(str.size() == 0){
+            output_file << endl;
+            continue;
+        }
+        smatch m1, m2;
+
+        if (!regex_match(str, m1, include_quotes) && !regex_match(str, m2, include_brackets)) {
+           output_file << str + "\n"s;
+        } else {
+            bool file_found = false;
+            path p;
+            path current_p;
+            ifstream input_internal;
+            if (regex_match(str, m1, include_quotes)){
+                p = string(m1[1]);
+                //cout << p.string() << endl;
+                current_p = in_file_path.parent_path()/p;
+                if (filesystem::exists(current_p)){
+                    file_found = true;
+                } else {
+                    for (const auto& dir : include_directories){
+                    current_p =  dir/p;
+                    if(filesystem::exists(current_p)){
+                        file_found = true;
+                        break;
+                    }
+                    }
+                }
+            } else{  
+                regex_match(str, m2, include_brackets);
+                p = string(m2[1]);
+                for (const auto& dir : include_directories){
+                    current_p =  dir/p;
+                    if(filesystem::exists(current_p)){
+                        file_found = true;
+                       break;
+                    }
+                }   
+            } 
+            if (file_found){
+                    input_internal.open(current_p);
+                    Preprocess(input_internal, output_file, current_p, include_directories);
+                } else {
+                 std::cout << "unknown include file " << p.string() << " at file " << in_file_path.string() << " at line " << line << endl ;
+                    return false;
+                }    
+        } 
+    }
+     return true;
+}
+
 // напишите эту функцию
-bool Preprocess(const path& in_file, const path& out_file, const vector<path>& include_directories);
+bool Preprocess(const path& in_file, const path& out_file, const vector<path>& include_directories){
+    ifstream input_file(in_file);
+    if(!input_file.is_open()){
+       cerr << "Input file not found" << std::endl;
+        return false;
+    }
+    
+    ofstream output_file(out_file);
+    if(!output_file.is_open()){
+        cerr << "Output file not found" << std::endl;
+        return false;
+    }
+    
+    return Preprocess(input_file, output_file, in_file, include_directories);
+}
+
+
+
 
 string GetFileContents(string file) {
     ifstream stream(file);
